@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron"
-import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { ElectronAPI, InitStep, SqliteMigrationProgress, TgsRouterAPI, TgsStatus } from "./types"
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
@@ -84,3 +84,17 @@ const api: ElectronAPI = {
 }
 
 contextBridge.exposeInMainWorld("api", api)
+
+const tgsRouterApi: TgsRouterAPI = {
+  getStatus: () => ipcRenderer.invoke("tgs:status:get"),
+  watchStatus: (cb) => {
+    const handler = (_: unknown, status: TgsStatus) => cb(status)
+    ipcRenderer.on("tgs:status:update", handler)
+    ipcRenderer.invoke("tgs:status:watch")
+    return () => ipcRenderer.removeListener("tgs:status:update", handler)
+  },
+  stopAgent: (taskId) => ipcRenderer.invoke("tgs:agent:stop", taskId),
+  resumeAgent: (taskId) => ipcRenderer.invoke("tgs:agent:resume", taskId),
+}
+
+contextBridge.exposeInMainWorld("tgsRouter", tgsRouterApi)

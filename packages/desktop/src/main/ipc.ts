@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process"
+import { readFileSync } from "node:fs"
+import { watch as fsWatch } from "node:fs"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
@@ -213,6 +215,71 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("run-desktop-menu-action", (event: IpcMainInvokeEvent, action: DesktopMenuAction) => {
     runDesktopMenuAction(BrowserWindow.fromWebContents(event.sender), action)
+  })
+
+  // TGS Router agent monitor IPC
+  const TGS_STATUS_FILE = "/tmp/tgs-router-status.json"
+
+  function readTgsStatus() {
+    try {
+      return JSON.parse(readFileSync(TGS_STATUS_FILE, "utf8"))
+    } catch {
+      return null
+    }
+  }
+
+  ipcMain.handle("tgs:status:get", () => readTgsStatus())
+
+  ipcMain.handle("tgs:status:watch", (event: IpcMainInvokeEvent) => {
+    let watcher: ReturnType<typeof fsWatch> | null = null
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+    function sendUpdate() {
+      const status = readTgsStatus()
+      if (status && !event.sender.isDestroyed()) {
+        event.sender.send("tgs:status:update", status)
+      }
+    }
+
+    try {
+      watcher = fsWatch(TGS_STATUS_FILE, () => {
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(sendUpdate, 50)
+      })
+    } catch {
+      // status file doesn't exist yet — no-op
+    }
+
+    event.sender.once("destroyed", () => {
+      watcher?.close()
+      if (debounceTimer) clearTimeout(debounceTimer)
+    })
+
+    sendUpdate()
+  })
+
+  ipcMain.handle("tgs:agent:stop", (_event: IpcMainInvokeEvent, taskId: string) => {
+    const status = readTgsStatus()
+    const agent = status?.active?.find((a: { task_id: string; pid?: number }) => a.task_id === taskId)
+    if (agent?.pid) {
+      try {
+        process.kill(agent.pid, "SIGSTOP")
+      } catch {
+        // process may have already exited
+      }
+    }
+  })
+
+  ipcMain.handle("tgs:agent:resume", (_event: IpcMainInvokeEvent, taskId: string) => {
+    const status = readTgsStatus()
+    const agent = status?.active?.find((a: { task_id: string; pid?: number }) => a.task_id === taskId)
+    if (agent?.pid) {
+      try {
+        process.kill(agent.pid, "SIGCONT")
+      } catch {
+        // process may have already exited
+      }
+    }
   })
 }
 

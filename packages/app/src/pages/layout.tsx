@@ -3,6 +3,7 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createSignal,
   For,
   on,
   onCleanup,
@@ -88,6 +89,7 @@ import {
 } from "./layout/sidebar-workspace"
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
+import { AgentSidebar } from "@/components/agent-sidebar"
 
 export default function Layout(props: ParentProps) {
   const [store, setStore, , ready] = persisted(
@@ -105,6 +107,15 @@ export default function Layout(props: ParentProps) {
   )
 
   const pageReady = createMemo(() => ready())
+
+  const [agentSidebarOpen, setAgentSidebarOpen] = createSignal(
+    localStorage.getItem("tgs.agentSidebarOpen") === "true",
+  )
+  function toggleAgentSidebar() {
+    const next = !agentSidebarOpen()
+    setAgentSidebarOpen(next)
+    localStorage.setItem("tgs.agentSidebarOpen", String(next))
+  }
 
   let scrollContainerRef: HTMLDivElement | undefined
   let dialogRun = 0
@@ -1005,6 +1016,13 @@ export default function Layout(props: ParentProps) {
         category: language.t("command.category.view"),
         keybind: "mod+b",
         onSelect: () => layout.sidebar.toggle(),
+      },
+      {
+        id: "agent.sidebar.toggle",
+        title: "Toggle Agent Monitor",
+        category: language.t("command.category.view"),
+        keybind: "mod+shift+a",
+        onSelect: () => toggleAgentSidebar(),
       },
       {
         id: "project.open",
@@ -2391,6 +2409,7 @@ export default function Layout(props: ParentProps) {
           <UpdateAvailableToast version={updateVersion() ?? ""} install={installUpdate} language={language} />
         </Show>
         <div class="flex-1 min-h-0 min-w-0 flex">
+          <AgentSidebar open={agentSidebarOpen()} onToggle={toggleAgentSidebar} />
           <div class="flex-1 min-h-0 relative">
             <div class="size-full relative overflow-x-hidden">
               <nav
